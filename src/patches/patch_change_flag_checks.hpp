@@ -27,6 +27,15 @@ public:
         // Make the Sluice Key door check that Sluice Key is owned instead of checking that chest containing Sluice Key
         // in vanilla game was opened
         data.set_word_le(0x567029A, 0x3100);
+
+        // Skip Septimus spawning on Overworld C2 once Magyscar is done.
+        // Vanilla is "if FLAG_POST_MAGYSCAR_STORY is off, skip this spawn" (opcode 0x31).
+        // Replacing the first three bytes with an unconditional goto (0x02) always skips it.
+        // Map 331 is the same Overworld C2 script, already patched the same way for Lars Crypt.
+        data.set_bytes(0x364D4E, { 0x02, 0x8B, 0x00 });
+        data.set_bytes(0x3652AE, { 0x02, 0x2E, 0x00 });
+        data.set_bytes(0x494EE82, { 0x02, 0x8B, 0x00 });
+        data.set_bytes(0x494F3E2, { 0x02, 0x2E, 0x00 });
     }
 };
 

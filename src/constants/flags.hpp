@@ -40,6 +40,11 @@ constexpr Flag FLAG_CAN_PUT_FLOWERS_IN_GRAVEYARD = Flag(0xD351, 1);
 constexpr Flag FLAG_CAN_EXIT_LARS_CRYPT = Flag(0xD34E, 0);
 
 constexpr Flag FLAG_MAGYSCAR_WALL_IS_CRACKED = Flag(0xD357, 5);
+// Event code 0x00D7. Set by Uma's victory script on Magyscar map 95.
+constexpr Flag FLAG_MAGYSCAR_BOSS_BEATEN = Flag(0xD34E, 7);
+// Event code 0x02C8. Set by the post-Magyscar Inoa dialog about Ronan.
+// Overworld C2 spawns Septimus only when this AND FLAG_MAGYSCAR_BOSS_BEATEN are on.
+constexpr Flag FLAG_POST_MAGYSCAR_STORY = Flag(0xD38D, 0);
 
 constexpr Flag FLAG_COAL_MINE_BOSS_BEATEN = Flag(0xD395, 5);
 
