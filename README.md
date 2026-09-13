@@ -57,3 +57,7 @@ will need CMake to do so, and then do:
 
 - On Windows, with Visual Studio 2019 installed, you can execute `build_win_vs2019.bat`
 - On Unix, you can execute `build_unix.sh`
+
+The compiled binary needs `dumpsxiso` and `mkpsxiso` under `tools/` (Windows: `tools\dumpsxiso.exe` and `tools\mkpsxiso.exe`).
+Those tools are included in the release packages; if you build from source, get them from https://github.com/Lameguy64/mkpsxiso.
+A missing tool or a non-zero exit is fatal. Tool output is printed on failure and written to `./tool.log` (kept on `--verbose` or if patching fails).

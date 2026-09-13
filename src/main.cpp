@@ -9,10 +9,17 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
+#include <system_error>
+
+#ifndef WIN32
+#include <sys/wait.h>
+#endif
 
 #include "personal_settings.hpp"
 #include "randomizer_options.hpp"
@@ -145,6 +152,10 @@ namespace
             << "  --graph                Write ./logic.dot as a Graphviz logic graph.\n"
             << "  --debuglog=PATH        Write a debug log JSON (only if spoiler logs are\n"
             << "                         allowed by the preset).\n"
+            << "  --verbose[=PATH]       Keep dumpsxiso/mkpsxiso output in a log file\n"
+            << "                         (default: ./tool.log). Without --verbose the log\n"
+            << "                         is kept only if patching fails. Success stays off\n"
+            << "                         the console; failures still print the tool output.\n"
 #ifdef DEBUG
             << "  --dumpmodel            Dump the logic model to ./json_data/.\n"
 #endif
@@ -158,6 +169,7 @@ namespace
             << "\n"
             << "Examples:\n"
             << "  alundra-randomizer --preset=default --nopause\n"
+            << "  alundra-randomizer --preset=default --verbose --nopause\n"
             << "  alundra-randomizer --input=\"Alundra (USA) (Rev 1).bin\" --outputrom=./seeds/\n"
             << "  alundra-randomizer --permalink --nopause\n"
             << "  alundra-randomizer --only-logic --preset=default --outputlog=./spoiler.json --nopause\n";
@@ -205,67 +217,189 @@ namespace
                                       "The file may be corrupted or an unclean rip.");
         }
     }
+
+#ifdef WIN32
+    constexpr const char* DUMPSXISO_TOOL = "tools\\dumpsxiso.exe";
+    constexpr const char* MKPSXISO_TOOL = "tools\\mkpsxiso.exe";
+#else
+    constexpr const char* DUMPSXISO_TOOL = "./tools/dumpsxiso";
+    constexpr const char* MKPSXISO_TOOL = "./tools/mkpsxiso";
+#endif
+
+    void require_tool(const char* tool_path)
+    {
+        if(!std::filesystem::exists(tool_path))
+        {
+            throw RandomizerException("required tool " + std::string(tool_path)
+                                      + " is missing; release packages ship it under tools/\n"
+                                        "       If you built from source, get dumpsxiso and "
+                                        "mkpsxiso from https://github.com/Lameguy64/mkpsxiso");
+        }
+    }
+
+    void require_patch_tools()
+    {
+        require_tool(DUMPSXISO_TOOL);
+        require_tool(MKPSXISO_TOOL);
+    }
+
+    std::string read_text_file(const std::filesystem::path& path)
+    {
+        std::ifstream in(path);
+        if(!in)
+            return {};
+
+        std::ostringstream out;
+        out << in.rdbuf();
+        return out.str();
+    }
+
+    void print_captured_output(const std::string& captured)
+    {
+        if(captured.empty())
+            return;
+
+        std::cerr << captured;
+        if(captured.back() != '\n')
+            std::cerr << '\n';
+    }
+
+    constexpr const char* log_file = "./tool.log";
+
+    std::filesystem::path resolve_tool_log_path(const ArgumentDictionary& args)
+    {
+        if(!args.get_boolean("verbose"))
+            return {};
+
+        const std::string path = args.get_string("verbose");
+        std::filesystem::path resolved = (path.empty() || path == "true") ? log_file : std::filesystem::path(path);
+        if(std::filesystem::is_directory(resolved))
+            resolved /= "tool.log";
+        return resolved;
+    }
+
+    std::filesystem::path resolve_capture_path(const std::filesystem::path& tool_log_path)
+    {
+        if(!tool_log_path.empty())
+            return tool_log_path;
+        return log_file;
+    }
+
+    void reset_tool_log(const std::filesystem::path& log_path)
+    {
+        std::ofstream out(log_path, std::ios::trunc);
+        if(!out)
+            throw RandomizerException("Could not open tool log file for writing at path '" + log_path.string() + "'");
+    }
+
+    void discard_capture_log(const std::filesystem::path& tool_log_path)
+    {
+        if(!tool_log_path.empty())
+            return;
+
+        std::error_code ec;
+        std::filesystem::remove(resolve_capture_path({}), ec);
+    }
+
+    // Runs the command quietly. stdout/stderr append to one log file (./tool.log, or
+    // --verbose=PATH). That file is kept on --verbose or if dump/rebuild fails.
+    void run_external_command(const std::string& command,
+                              const std::filesystem::path& tool_log_path = {},
+                              const std::string& extra_failure_hint = "")
+    {
+        const std::filesystem::path capture_path = resolve_capture_path(tool_log_path);
+
+        std::ofstream header(capture_path, std::ios::app);
+        if(!header)
+            throw RandomizerException("Could not open tool log file for writing at path '" + capture_path.string() + "'");
+        header << ">>> " << command << "\n";
+        header.close();
+
+        const std::string redirected = command + " >> \"" + capture_path.string() + "\" 2>&1";
+        const int status = std::system(redirected.c_str());
+        if(status == -1)
+        {
+            print_captured_output(read_text_file(capture_path));
+            throw RandomizerException("Could not launch command: " + command
+                                      + " Tool output written to '" + capture_path.string() + "'.");
+        }
+
+#ifdef WIN32
+        const bool success = (status == 0);
+        const int code = status;
+#else
+        const bool exited = WIFEXITED(status);
+        const int code = exited ? WEXITSTATUS(status) : status;
+        const bool success = exited && code == 0;
+#endif
+        if(!success)
+        {
+            print_captured_output(read_text_file(capture_path));
+            std::string message = "Command failed with code " + std::to_string(code) + ": " + command;
+            if(!extra_failure_hint.empty())
+                message += " " + extra_failure_hint;
+            throw RandomizerException(message + " Tool output written to '" + capture_path.string() + "'.");
+        }
+    }
 }
 
 /**
  * Calls the external tool `dumpsxiso` in order to dump the game image into a folder containing
- * all game files.
+ * all game files. A failed extract or missing output files are fatal.
  * 
  * @param input_file_path the path to the disc image file
  * @param output_dir_path the path to the output directory where game files will be extracted
  */
-void dump_iso(const std::filesystem::path& input_file_path, const std::filesystem::path& output_dir_path)
+void dump_iso(const std::filesystem::path& input_file_path, const std::filesystem::path& output_dir_path,
+              const std::filesystem::path& tool_log_path)
 {
-#ifdef WIN32
-    std::string command = "tools\\dumpsxiso.exe \"" + input_file_path.string() + "\"";
-#else
-    std::string command = "./tools/dumpsxiso \"" + input_file_path.string() + "\"";
-#endif
+    const std::filesystem::path capture_path = resolve_capture_path(tool_log_path);
+    reset_tool_log(capture_path);
+
+    std::string command = DUMPSXISO_TOOL;
+    command += " \"" + input_file_path.string() + "\"";
     command += " -x \"" + output_dir_path.string() + "\"";
     command += " -s \"" + output_dir_path.string() + "/build.xml\"";
 
-    // Remove standard output for this command
-#ifdef WIN32
-    command += " > nul";
-#else
-    command += " > /dev/null";
-#endif
+    run_external_command(command, tool_log_path);
 
-    system(command.c_str());
+    const std::filesystem::path required_files[] = {
+        output_dir_path / "DATA" / "DATAS.BIN",
+        output_dir_path / "ALUN_CD.EXE",
+        output_dir_path / "build.xml",
+    };
+    for(const std::filesystem::path& path : required_files)
+    {
+        if(!std::filesystem::exists(path))
+        {
+            print_captured_output(read_text_file(capture_path));
+            throw RandomizerException("Required file '" + path.string()
+                                      + "' was not created. See the extract log above. Tool output written to '"
+                                      + capture_path.string() + "'.");
+        }
+    }
 }
 
 /**
  * Calls the external tool `mkpsxiso` in order to re-pack the game image from a folder containing
- * all game files.
+ * all game files. A non-zero exit is fatal.
  * 
  * @param input_dir_path the path to the directory containing game files
  * @param output_file_path the path to the output disc image file that will be created
- * @return true if the process succeeded, false otherwise
  */
-bool rebuild_iso(const std::filesystem::path& input_dir_path, const std::filesystem::path& output_file_path)
+void rebuild_iso(const std::filesystem::path& input_dir_path, const std::filesystem::path& output_file_path,
+                 const std::filesystem::path& tool_log_path)
 {
     std::filesystem::path cue_file_path = output_file_path;
     cue_file_path.replace_extension("cue");
 
-#ifdef WIN32
-    std::string command = "tools\\mkpsxiso.exe \"" + input_dir_path.string() + "build.xml\"";
-#else
-    std::string command = "./tools/mkpsxiso \"" + input_dir_path.string() + "build.xml\"";
-#endif
-
+    std::string command = MKPSXISO_TOOL;
+    command += " \"" + input_dir_path.string() + "build.xml\"";
     command += " -o \"" + output_file_path.string() + "\"";
     command += " -c \"" + cue_file_path.string() + "\"";
     command += " -y";
 
-    // Remove standard output for this command
-#ifdef WIN32
-    command += " > nul";
-#else
-    command += " > /dev/null";
-#endif
-
-    int exit_code = system(command.c_str());
-    return exit_code == 0;
+    run_external_command(command, tool_log_path, "The output image may currently be in use.");
 }
 
 /**
@@ -340,7 +474,8 @@ Json randomize(RandomizerWorld& world, GameData& game_data, RandomizerOptions& o
 }
 
 void build_patched_rom(const std::filesystem::path& input_path, const std::filesystem::path& output_path, 
-                       GameData& game_data, RandomizerWorld& world, const RandomizerOptions& options)
+                       GameData& game_data, RandomizerWorld& world, const RandomizerOptions& options,
+                       const std::filesystem::path& tool_log_path)
 {
 #ifdef DEBUG
     std::filesystem::remove_all("./tmp_dump/");
@@ -351,7 +486,9 @@ void build_patched_rom(const std::filesystem::path& input_path, const std::files
 
     // Dump the input ROM into a "tmp_dump" folder
     std::cout << "Extracting game files...\n";
-    dump_iso(input_path, "./tmp_dump/");
+    if(!tool_log_path.empty())
+        std::cout << "Writing tool output to " << tool_log_path << ".\n";
+    dump_iso(input_path, "./tmp_dump/", tool_log_path);
 
     // Apply patches to relevant files that were extracted from the game ROM
     std::cout << "Editing game files...\n";
@@ -365,23 +502,25 @@ void build_patched_rom(const std::filesystem::path& input_path, const std::files
 
     // Use an external tool to repack the files into a PS1 disc image
     std::cout << "Building a disc image...\n";
-    if(!rebuild_iso("./tmp_dump/", output_path))
-        throw RandomizerException("Could not build disc image. Maybe the file is currently in use?");
+    rebuild_iso("./tmp_dump/", output_path, tool_log_path);
 
 #ifndef DEBUG
     std::filesystem::remove_all("./tmp_dump/");
 #endif
+
+    discard_capture_log(tool_log_path);
 
     std::cout << "Randomized game outputted to " << output_path << ".\n";
 }
 
 void generate(const ArgumentDictionary& args)
 {
-    // Fail fast if the disc image is missing (--only-logic does not need one).
+    // Fail fast if the disc image or patch tools are missing (--only-logic needs neither).
     const bool patch_rom = !args.contains("only-logic");
     std::filesystem::path input_rom_path;
     if(patch_rom)
     {
+        require_patch_tools();
         input_rom_path = resolve_input_image_path(args);
         std::cout << "Using input image '" << input_rom_path.string() << "'.\n";
     }
@@ -402,7 +541,8 @@ void generate(const ArgumentDictionary& args)
     process_paths(output_rom_path, spoiler_log_path, options.hash_sentence());
 
     if(patch_rom)
-        build_patched_rom(input_rom_path, output_rom_path, game_data, world, options);
+        build_patched_rom(input_rom_path, output_rom_path, game_data, world, options,
+                          resolve_tool_log_path(args));
     
     // Write a spoiler log to help the player
     if(!spoiler_log_path.empty())
