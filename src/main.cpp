@@ -98,6 +98,71 @@ namespace
                                   + ". You can also pass a path with --input=.");
     }
 
+    bool requested_help(int argc, char* argv[], const ArgumentDictionary& args)
+    {
+        if(args.contains("help") || args.contains("h"))
+            return true;
+
+        for(int i = 1; i < argc; ++i)
+        {
+            const std::string arg = argv[i];
+            if(arg == "-h" || arg == "-help" || arg == "/?")
+                return true;
+        }
+
+        return false;
+    }
+
+    void print_help()
+    {
+        std::cout
+            << "======== Alundra Randomizer v" << RELEASE << " ========\n"
+            << "\n"
+            << "Generate a randomized Alundra (USA 1.1) disc image.\n"
+            << "\n"
+            << "Usage:\n"
+            << "  alundra-randomizer [options]\n"
+            << "\n"
+            << "Options:\n"
+            << "  --help, -h             Show this help and exit.\n"
+            << "  --input=PATH           Path to an Alundra USA 1.1 .bin image.\n"
+            << "                         If omitted, the current folder is searched for:\n";
+        for(const char* name : KNOWN_INPUT_IMAGE_NAMES)
+            std::cout << "                           " << name << "\n";
+        std::cout
+            << "  --outputrom=PATH       Output .bin path, or a directory (default: ./).\n"
+            << "                         If PATH is a directory, the file is named after the\n"
+            << "                         seed hash sentence.\n"
+            << "  --outputlog=PATH       Spoiler/generation log .json path, or a directory\n"
+            << "                         (default: alongside the output ROM).\n"
+            << "  --preset=NAME          Preset JSON from ./presets/ (e.g. default).\n"
+            << "                         If omitted, you will be prompted (Enter = default).\n"
+            << "  --permalink[=CODE]     Rebuild a seed from a permalink. If CODE is omitted,\n"
+            << "                         you will be prompted to paste it.\n"
+            << "  --seedcount=N          Generate N seeds (default: 1).\n"
+            << "  --only-logic           Randomize and write the log without dumping or\n"
+            << "                         patching a disc image (no input ROM required).\n"
+            << "  --graph                Write ./logic.dot as a Graphviz logic graph.\n"
+            << "  --debuglog=PATH        Write a debug log JSON (only if spoiler logs are\n"
+            << "                         allowed by the preset).\n"
+#ifdef DEBUG
+            << "  --dumpmodel            Dump the logic model to ./json_data/.\n"
+#endif
+            << "  --pause                Wait for Enter before exiting (this is the default).\n"
+            << "                         Same as --pause=true.\n"
+            << "  --nopause              Exit as soon as generation finishes. Same as\n"
+            << "                         --pause=false.\n"
+            << "\n"
+            << "Game and randomizer settings (item distribution, starting inventory, crests,\n"
+            << "and so on) are not CLI flags. Put them in a preset JSON under ./presets/.\n"
+            << "\n"
+            << "Examples:\n"
+            << "  alundra-randomizer --preset=default --nopause\n"
+            << "  alundra-randomizer --input=\"Alundra (USA) (Rev 1).bin\" --outputrom=./seeds/\n"
+            << "  alundra-randomizer --permalink --nopause\n"
+            << "  alundra-randomizer --only-logic --preset=default --outputlog=./spoiler.json --nopause\n";
+    }
+
     void validate_input_image(const std::filesystem::path& input_path)
     {
         if(!std::filesystem::exists(input_path))
@@ -367,6 +432,12 @@ int main(int argc, char* argv[])
     int return_code = EXIT_SUCCESS;
 
     ArgumentDictionary args(argc, argv);
+
+    if(requested_help(argc, argv, args))
+    {
+        print_help();
+        return EXIT_SUCCESS;
+    }
 
     std::cout << "======== Alundra Randomizer v" << RELEASE << " ========\n\n";
 
