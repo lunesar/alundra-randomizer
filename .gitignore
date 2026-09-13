@@ -1,4 +1,5 @@
 # CMake related
+build/
 build_debug/
 build_release_win64/
 build_release_win32/
@@ -8,3 +9,13 @@ build_release_win32/
 *.hxx
 # Remove any compiled binary
 *.exe
+# Temporary editing files
+*.swp
+# Local disc images
+/*/input.bin
+/*/Alundra.bin
+/*/Alundra (USA).bin
+/*/Alundra (USA) (Rev 1).bin
+/*/Alundra (USA) (v1.1).bin
+# External tools (dumpsxiso, mkpsxiso, etc.)
+release_package/tools/
