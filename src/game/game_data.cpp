@@ -87,12 +87,9 @@ void GameData::init_starting_flags()
     // Activate Torla geysers on game start, giving access to Torla Mountain
     _starting_flags.emplace_back(FLAG_TORLA_GEYSERS_ACTIVE);
 
-    // Activate Nirude moai statues
-    // TODO: This looks like it's breaking the boss reward for now, so we'll just let the normal dungeon flow
-    //       do the work.
-    // _starting_flags.emplace_back(FLAG_SAW_NIRUDE_STATUES_ACTIVATION_CUTSCENE);
-    // _starting_flags.emplace_back(FLAG_NIRUDE_SAW_TOP_LEFT_CUTSCENE);
-    // _starting_flags.emplace_back(FLAG_NIRUDE_STATUES_VULNERABLE);
+    // Nirude entrance boulder. Moai cutscenes are skipped in PatchRemoveCutscenes
+    // without setting FLAG_NIRUDE_STATUES_VULNERABLE (that flag is the statues'
+    // one-shot wake-up and would block the boss-reward plaza).
     _starting_flags.emplace_back(FLAG_NIRUDE_LOWER_BOULDER_REMOVED);
 
     // Flag allowing to exit Lars Crypt without having to beat the boss

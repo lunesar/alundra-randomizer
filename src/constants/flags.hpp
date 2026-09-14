@@ -51,8 +51,11 @@ constexpr Flag FLAG_COAL_MINE_BOSS_BEATEN = Flag(0xD395, 5);
 constexpr Flag FLAG_NIRUDE_IS_BROKEN = Flag(0xD34F, 5);
 constexpr Flag FLAG_TORLA_GEYSERS_ACTIVE = Flag(0xD37A, 3);
 
+// Event code 0x04C6. Overworld E1 Moai one-shot wake-up. Do not set at new game.
 constexpr Flag FLAG_NIRUDE_STATUES_VULNERABLE = Flag(0xD3CC, 6);
+// Event code 0x04E0. Set by the Overworld E1 statue-activation script (B[14]).
 constexpr Flag FLAG_SAW_NIRUDE_STATUES_ACTIVATION_CUTSCENE = Flag(0xD3D0, 0);
+// Event code 0x04D6. Set by the Overworld E1 top-left Miming script and by map 424.
 constexpr Flag FLAG_NIRUDE_SAW_TOP_LEFT_CUTSCENE = Flag(0xD3CE, 6);
 constexpr Flag FLAG_NIRUDE_LOWER_BOULDER_REMOVED = Flag(0xD3CE, 7);
 

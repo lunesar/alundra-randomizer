@@ -2,6 +2,7 @@
 
 #include "game_patch.hpp"
 #include "../constants/flags.hpp"
+#include "../constants/map_codes.hpp"
 
 class PatchRemoveCutscenes : public GamePatch {
 public:
@@ -20,6 +21,7 @@ public:
         remove_lars_crypt_5_sages_cutscene(data);
         remove_post_wilda_night_cutscene(data);
         remove_post_nirude_cutscene(data);
+        skip_nirude_moai_cutscenes(data);
     }
 
 private:
@@ -96,6 +98,11 @@ private:
 
     static void remove_post_nirude_cutscene(BinaryFile& data)
     {
+        // TODO: Map 17 has no portals into Nirude interiors (421-426); map 439 does.
+        // Switching the E1 variant to 17 here closes the dungeon. Logic still treats
+        // every nirude_lair chest as collectable, so a required item left inside
+        // makes the seed unwinnable. Keep variant 439 (or copy those portals onto
+        // map 17) if we want re-entry after the boss.
         ByteArray event_bytes;
 
         event_bytes.add_byte(0x38);                 // Set map variant
@@ -108,5 +115,35 @@ private:
 
         // Trigger this event sequence on boss death
         data.set_bytes(0x47E7B57, event_bytes);
+    }
+
+    // Skip Overworld E1 Moai cinematics on maps 17 and 439.
+    // STATUES_VULNERABLE must still be set here (as the skipped cinematic did).
+    // Setting it at new game is what idles the statues too early; after 0x04DD
+    // (first lair entry) is the vanilla timing.
+    static void skip_nirude_moai_cutscenes(BinaryFile& data)
+    {
+        // B[13] top-left Miming cutscene: "if SAW_TOP_LEFT on, goto end" → always goto end.
+        data.set_bytes(0x547548, { 0x02, 0xE4, 0x00 });
+        data.set_bytes(0x5F3C554, { 0x02, 0xE4, 0x00 });
+
+        // B[14] still waits for 0x04DD (entered the lair), then sets motion/seen
+        // flags plus STATUES_VULNERABLE so the mouths can take damage.
+        ByteArray flags_and_end;
+        flags_and_end.add_byte(0x05);
+        flags_and_end.add_word_le(0x04CF);
+        flags_and_end.add_byte(0x05);
+        flags_and_end.add_word_le(0x04D1);
+        flags_and_end.add_byte(0x05);
+        flags_and_end.add_word_le(0x04D2);
+        flags_and_end.add_byte(0x05);
+        flags_and_end.add_word_le(FLAG_NIRUDE_SAW_TOP_LEFT_CUTSCENE.event_code());
+        flags_and_end.add_byte(0x05);
+        flags_and_end.add_word_le(FLAG_SAW_NIRUDE_STATUES_ACTIVATION_CUTSCENE.event_code());
+        flags_and_end.add_byte(0x05);
+        flags_and_end.add_word_le(FLAG_NIRUDE_STATUES_VULNERABLE.event_code());
+        flags_and_end.add_byte(0xFF);
+        data.set_bytes(0x547635, flags_and_end);
+        data.set_bytes(0x5F3C641, flags_and_end);
     }
 };
