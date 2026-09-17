@@ -14,6 +14,9 @@ class WorldNode;
 class ItemSource
 {
 private:
+    /// Stable unique identifier for this location (Archipelago location ID)
+    uint16_t _id = 0;
+
     /// The name used to describe this ItemSource
     std::string _name;
 
@@ -51,6 +54,9 @@ private:
 public:
     ItemSource() = default;
     virtual ~ItemSource() = default;
+
+    [[nodiscard]] uint16_t id() const { return _id; }
+    void id(uint16_t id) { _id = id; }
 
     [[nodiscard]] const std::string& name() const { return _name; }
     void name(const std::string& name) { _name = name; }

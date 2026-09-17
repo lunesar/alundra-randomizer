@@ -38,6 +38,7 @@ Json ItemSource::to_json() const
 {
     Json json;
 
+    json["id"] = _id;
     json["name"] = _name;
     json["nodeId"] = _node->id();
     if(!_addresses.empty())
@@ -62,7 +63,9 @@ ItemSource* ItemSource::from_json(const Json& json, const GameData& game_data, c
 
     for(auto& [key, value] : json.items())
     {
-        if(key == "name")                        
+        if(key == "id")
+            source->id(value);
+        else if(key == "name")
             source->name(value);
         else if(key == "nodeId")
             source->node(world.node(value));
@@ -83,6 +86,9 @@ ItemSource* ItemSource::from_json(const Json& json, const GameData& game_data, c
         else
             throw RandomizerException("Unknown key '" + key + "' in ItemSource JSON");
     }
+
+    if(source->id() == 0)
+        throw RandomizerException("ItemSource '" + source->name() + "' is missing a unique id");
 
     return source;
 }
