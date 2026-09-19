@@ -45,9 +45,15 @@ private:
         // Remove the watchtower cutscene in Overworld A1
         data.set_bytes(0x105DB4, { 0x02, 0x7C, 0x00 }); // Always branch 0x7C bytes forward
 
-        // Remove flag set on meatballs fall so they disappear on map exit + re-enter.
-        // This prevents Coal Mine entrance from being blocked, and back exit from being a softlock source if triggered
-        // before doing Coal Mine
+        // Overworld B2 B[9]: meatballs fall when the player steps on the back-exit
+        // tiles (3,20), which is also the portal into map 329. Vanilla then sets
+        // flag 0x021D so B[10] keeps the boulders there. Skipping only the FlagOn
+        // (below) makes them vanish after a map reload, but the fall still plays
+        // every visit. Skip the whole scene so the back exit stays usable.
+        data.set_bytes(0x2459AC, { 0x02, 0x5B, 0x00, 0x01, 0x01 });
+
+        // Remove flag set on meatballs fall so they disappear on map exit + re-enter
+        // if the scene above is ever reached anyway.
         data.set_bytes(0x245A04, { 0x02, 0x03, 0x00 });
 
         // Big rocks disappearing initially requires 2 flags:
@@ -62,6 +68,15 @@ private:
         // Change the watchtower requirement to a "beat Coal Mine boss" requirement for villagers cutscene to trigger
         // in Overworld B2
         data.set_word_le(0x2458A1, FLAG_COAL_MINE_BOSS_BEATEN.event_code());
+
+        // Map 329 (Murgg reward room) replays the Zazan scene whenever
+        // FLAG_COAL_MINE_BOSS_BEATEN is already on. Re-entering after leaving
+        // without the chest hangs that scene. Disable the re-entry cutscene
+        // (check unused flag 0x030E instead) and set the boss-beaten flag on
+        // first entry so overworld rocks still disappear.
+        data.set_byte(0x48DB631, 0x0E);
+        data.set_byte(0x48DB755, 0x0E);
+        data.set_bytes(0x48DB5C6, { 0x05, 0x0D, 0x03, 0x40, 0x02, 0x00, 0xFF, 0x01, 0x01 });
     }
 
     /**
