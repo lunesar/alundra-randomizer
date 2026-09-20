@@ -40,6 +40,13 @@ public:
         data.set_bytes(0x20EA8F9, ALWAYS_BRANCH);  // Flag DE
         data.set_bytes(0x20EA8FF, ALWAYS_BRANCH);  // Flag DF
         data.set_bytes(0x20EA90D, ALWAYS_BRANCH);  // Flag E0
+
+        // Overworld B4 cabin (map 144): stairs down to Nava's Keep. After the
+        // keep, the cabin stair close event (B[4]) takes control, plays the
+        // seal animation, sets SetUnwalkable on the hole, then asserts
+        // PlayerGainControl. Skipping the whole script left the player frozen.
+        // Skip the seal but still return control.
+        data.set_bytes(0x20EA9C4, { 0x11, 0xFF });
     }
 };
 
