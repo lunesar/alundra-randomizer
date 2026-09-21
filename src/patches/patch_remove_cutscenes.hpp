@@ -69,14 +69,20 @@ private:
         // in Overworld B2
         data.set_word_le(0x2458A1, FLAG_COAL_MINE_BOSS_BEATEN.event_code());
 
-        // Map 329 (Murgg reward room) replays the Zazan scene whenever
-        // FLAG_COAL_MINE_BOSS_BEATEN is already on. Re-entering after leaving
-        // without the chest hangs that scene. Disable the re-entry cutscene
-        // (check unused flag 0x030E instead) and set the boss-beaten flag on
-        // first entry so overworld rocks still disappear.
+        // Map 329 B[2]/B[3] replay Zazan whenever FLAG_COAL_MINE_BOSS_BEATEN is
+        // on. Point those checks at unused 0x030E so the first-visit fight
+        // (A[13] SetProgramIndex) still runs and re-entry does not hang.
         data.set_byte(0x48DB631, 0x0E);
         data.set_byte(0x48DB755, 0x0E);
         data.set_bytes(0x48DB5C6, { 0x05, 0x0D, 0x03, 0x40, 0x02, 0x00, 0xFF, 0x01, 0x01 });
+
+        // A[13] already SetWalkable two tiles on every load. Vanilla uses layer
+        // 0x01 (fight barriers). Skipping B[3]'s matching SetUnwalkable left
+        // those barriers up after the fight (invisible walls at the hole and
+        // the back exit). Open a ground-level gap at x=22 through the boulder
+        // rows (y=43 and y=55) so the heal-room hole connects to the exit.
+        data.set_bytes(0x48DB5BC, { 0x54, 0x16, 0x2B, 0x00, 0x10 });
+        data.set_bytes(0x48DB5C1, { 0x54, 0x16, 0x37, 0x00, 0x10 });
     }
 
     /**
