@@ -113,23 +113,47 @@ private:
 
     static void remove_post_nirude_cutscene(BinaryFile& data)
     {
-        // TODO: Map 17 has no portals into Nirude interiors (421-426); map 439 does.
-        // Switching the E1 variant to 17 here closes the dungeon. Logic still treats
-        // every nirude_lair chest as collectable, so a required item left inside
-        // makes the seed unwinnable. Keep variant 439 (or copy those portals onto
-        // map 17) if we want re-entry after the boss.
-        ByteArray event_bytes;
+        // Vanilla warps to cutscene map 451, which forces Overworld E1 to map 17
+        // (collapsed Nirude, no statue-mouth holes). Stay on 439, keep the variant
+        // slot pointing at 439, and use the same xyz as 451's plaza warp.
+        // IfFlagOff 0x01A1 else -> this block (re-enter beaten boss room = warp out).
+        data.set_bytes(0x47E7B27, { 0x2E, 0x00 });
+        data.set_bytes(0x47E7B52, {
+            0x38, 0x11, 0x00, 0xB7, 0x01,              // SetMapVariant 17 -> 439
+            0x53, 0xB7, 0x01, 0x19, 0x28, 0x25, 0x05, 0x4A, // ChangeMap 439 xy=19,28 z=0x25
+            0x00, 0x00, 0xFF
+        });
 
-        event_bytes.add_byte(0x38);                 // Set map variant
-        event_bytes.add_word_le(MAP_OVERWORLD_E1);  // for Nirude exterior
-        event_bytes.add_word_le(MAP_OVERWORLD_E1);  // to basic (broken) Nirude exterior instead of "dungeon in progress" variant
+        // Map 451: do not force variant 439 back to map 17
+        data.set_word_le(0x62297AD, MAP_OVERWORLD_E1_VARIANT);
 
-        event_bytes.add_byte(0x53);                  // Warp
-        event_bytes.add_word_le(MAP_OVERWORLD_E1);   // to Nirude exterior
-        event_bytes.add_bytes({ 0x19, 0x28, 0x00 }); // at coords 19, 28, 0
+        // Map 17 B[1] only SetMapVariant 17->439 once (if 0x04CA off). After that,
+        // neighbors that warp to map 17 (18, 79, 381) load the collapsed layout.
+        // Always refresh the variant, without rerunning the statue flag shuffle.
+        data.set_bytes(0x54707C, { 0x38, 0x11, 0x00, 0xB7, 0x01 }); // SetMapVariant 17->439
+        data.set_bytes(0x547081, { 0x02, 0x1A, 0x00 });             // Goto past flag shuffle
 
-        // Trigger this event sequence on boss death
-        data.set_bytes(0x47E7B57, event_bytes);
+        // Copy statue-mouth portals from 439 onto map 17 as a backup.
+        constexpr uint32_t PORTAL_SIZE = 12;
+        constexpr uint32_t MAP_17_PORTALS = 0x51F448;
+        constexpr uint32_t MAP_439_PORTALS = 0x5F14448;
+        data.set_bytes(MAP_17_PORTALS + 5 * PORTAL_SIZE,
+                       data.get_bytes(MAP_439_PORTALS + 4 * PORTAL_SIZE,
+                                      MAP_439_PORTALS + 10 * PORTAL_SIZE));
+
+        // Map 13 already has dual 17/439 return portals. 18, 79, and 381 only
+        // warp back to 17, which is why leaving E1 and returning looked sealed.
+        auto add_439_twin = [&](uint32_t table, uint32_t src_index, uint32_t dest_index)
+        {
+            ByteArray portal = data.get_bytes(table + src_index * PORTAL_SIZE,
+                                              table + (src_index + 1) * PORTAL_SIZE);
+            portal[4] = 0xB7;
+            portal[5] = 0x01; // dest map 439
+            data.set_bytes(table + dest_index * PORTAL_SIZE, portal);
+        };
+        add_439_twin(0x562C48, 4, 7);    // map 18
+        add_439_twin(0x12F5448, 7, 8);   // map 79
+        add_439_twin(0x5397448, 4, 8);   // map 381
     }
 
     // Skip Overworld E1 Moai cinematics on maps 17 and 439.
