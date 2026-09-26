@@ -137,7 +137,8 @@ namespace
             << "  --placement-in=PATH    Patch the disc and write the spoiler log from that JSON.\n"
             << "\n"
             << "A .json or .bin PATH is a file. Any other PATH is a directory, and the file\n"
-            << "is named after the hash sentence.\n"
+            << "is named after the hash sentence. That directory is created when its parent\n"
+            << "already exists.\n"
             << "\n"
             << "Options:\n"
             << "  --help, -h             Show this help and exit.\n"
@@ -506,15 +507,70 @@ void rebuild_iso(const std::filesystem::path& input_dir_path, const std::filesys
     run_external_command(command, tool_log_path, "The output image may currently be in use.");
 }
 
+namespace
+{
+    std::filesystem::path parent_or_current_directory(const std::filesystem::path& path)
+    {
+        const std::filesystem::path parent = path.parent_path();
+        if(parent.empty())
+            return ".";
+        return parent;
+    }
+
+    // The directory above an output must already exist. This does not create it.
+    void require_existing_directory(const std::filesystem::path& directory, const std::string& action)
+    {
+        std::error_code error;
+        if(std::filesystem::is_directory(directory, error))
+            return;
+        if(std::filesystem::exists(directory, error))
+        {
+            throw RandomizerException(action + " because '" + directory.string() + "' is not a directory.");
+        }
+        throw RandomizerException(action + " because directory '" + directory.string() + "' does not exist.");
+    }
+
+    // Create only the last directory, and only when its parent already exists.
+    // A path like "missing/new" must fail instead of creating both levels.
+    void ensure_output_directory(const std::filesystem::path& directory)
+    {
+        std::error_code error;
+        if(std::filesystem::is_directory(directory, error))
+            return;
+        if(std::filesystem::exists(directory, error))
+            throw RandomizerException("Output path '" + directory.string() + "' is not a directory.");
+
+        require_existing_directory(parent_or_current_directory(directory),
+                                   "Cannot create output directory '" + directory.string() + "'");
+
+        const bool created = std::filesystem::create_directory(directory, error);
+        if(error)
+        {
+            throw RandomizerException("Could not create output directory '" + directory.string() + "': "
+                                      + error.message());
+        }
+        if(created)
+            std::cout << "Created output directory '" << directory.string() << "'.\n";
+    }
+
+    void ensure_output_file_parent(const std::filesystem::path& file_path)
+    {
+        require_existing_directory(parent_or_current_directory(file_path),
+                                   "Cannot write '" + file_path.string() + "'");
+    }
+}
+
 /**
  * Process the given output paths (input by the user) to alter them following a bunch of rules.
- * 
+ * Paths that will actually be written are checked here, before randomization and disc patching.
+ *
  * @param output_rom_path a reference on the path that will be used for the output ROM
  * @param spoiler_log_path a reference on the path that will be used for the spoiler log
  * @param hash_sentence the seed unique "hash sentence", used as a default filename if none was given
+ * @param write_rom when false, the ROM path is not checked or created (logic-only runs)
  */
 void process_paths(std::filesystem::path& output_rom_path, std::filesystem::path& spoiler_log_path,
-                   const std::string& hash_sentence)
+                   const std::string& hash_sentence, bool write_rom)
 {
     // If output ROM path was not specified, put it in the current working directory
     if(output_rom_path.empty())
@@ -528,11 +584,24 @@ void process_paths(std::filesystem::path& output_rom_path, std::filesystem::path
             spoiler_log_path.replace_extension(".json");
     }
 
+    // A path without the file extension is a directory. Create that one directory when its
+    // parent already exists. A .bin/.json path must already have a parent directory.
+    const bool rom_is_directory = output_rom_path.extension() != ".bin";
+    const bool log_is_directory = spoiler_log_path.extension() != ".json";
+    if(write_rom && rom_is_directory)
+        ensure_output_directory(output_rom_path);
+    if(log_is_directory && !(write_rom && rom_is_directory && output_rom_path == spoiler_log_path))
+        ensure_output_directory(spoiler_log_path);
+    if(write_rom && !rom_is_directory)
+        ensure_output_file_parent(output_rom_path);
+    if(!log_is_directory)
+        ensure_output_file_parent(spoiler_log_path);
+
     // If path was not containing the appropriate file extension, it is considered as a directory path,
     // so append a default filename to it.
-    if(output_rom_path.extension() != ".bin")
+    if(rom_is_directory)
         output_rom_path = output_rom_path / (hash_sentence + ".bin");
-    if(spoiler_log_path.extension() != ".json")
+    if(log_is_directory)
         spoiler_log_path = spoiler_log_path / (hash_sentence + ".json");
 }
 
@@ -653,6 +722,16 @@ void generate(const ArgumentDictionary& args)
     game_data.apply_options(options);
     world.apply_options(options, game_data);
 
+    // Reject a bad output path before randomization or disc patching.
+    std::filesystem::path output_rom_path;
+    std::filesystem::path spoiler_log_path;
+    if(mode != RandomizerRunMode::GeneratePlacement)
+    {
+        output_rom_path = args.get_string("outputrom", "");
+        spoiler_log_path = args.get_string("outputlog", "");
+        process_paths(output_rom_path, spoiler_log_path, options.hash_sentence(), patch_rom);
+    }
+
     Json spoiler_json;
     if(mode == RandomizerRunMode::ApplyPlacement)
     {
@@ -672,11 +751,6 @@ void generate(const ArgumentDictionary& args)
         const bool randomize_hint_sources = mode == RandomizerRunMode::Full;
         spoiler_json = randomize(world, game_data, options, personal_settings, args, randomize_hint_sources);
     }
-
-    // Parse output paths from args
-    std::filesystem::path output_rom_path = args.get_string("outputrom", "");
-    std::filesystem::path spoiler_log_path = args.get_string("outputlog", "");
-    process_paths(output_rom_path, spoiler_log_path, options.hash_sentence());
 
     if(mode == RandomizerRunMode::GeneratePlacement)
     {
