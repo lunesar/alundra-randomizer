@@ -9,6 +9,7 @@ class GamePatch
 {
 public:
     GamePatch() = default;
+    virtual ~GamePatch() = default;
 
     virtual void alter_game_data(GameData& game_data) {}
 

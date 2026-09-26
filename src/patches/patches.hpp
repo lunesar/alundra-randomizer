@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <vector>
 
 class RandomizerOptions;
@@ -9,7 +10,7 @@ class PsxExeFile;
 class GameData;
 class RandomizerWorld;
 
-void execute_patches(const std::vector<GamePatch*>& patches, 
+void execute_patches(const std::vector<std::unique_ptr<GamePatch>>& patches,
                      BinaryFile& data_file, PsxExeFile& exe_file,
                      GameData& game_data, RandomizerWorld& world);
 

@@ -28,51 +28,50 @@
 #include "patch_adapt_blue_chest.hpp"
 #include "patch_set_casino_win_count.hpp"
 
-void execute_patches(const std::vector<GamePatch*>& patches, 
-                     BinaryFile& data_file, PsxExeFile& exe_file, 
+void execute_patches(const std::vector<std::unique_ptr<GamePatch>>& patches,
+                     BinaryFile& data_file, PsxExeFile& exe_file,
                      GameData& game_data, RandomizerWorld& world)
 {
-    for(GamePatch* patch : patches) patch->alter_game_data(game_data);
-    for(GamePatch* patch : patches) patch->alter_datas_file(data_file, game_data, world);
-    for(GamePatch* patch : patches) patch->alter_exe_file(exe_file, game_data, world);
-    for(GamePatch* patch : patches) delete patch;
+    for(const std::unique_ptr<GamePatch>& patch : patches) patch->alter_game_data(game_data);
+    for(const std::unique_ptr<GamePatch>& patch : patches) patch->alter_datas_file(data_file, game_data, world);
+    for(const std::unique_ptr<GamePatch>& patch : patches) patch->alter_exe_file(exe_file, game_data, world);
 }
 
 void apply_randomizer_patches(BinaryFile& data, PsxExeFile& exe, 
                               GameData& game_data, RandomizerWorld& world,
                               const RandomizerOptions& options)
 {
-    std::vector<GamePatch*> patches;
+    std::vector<std::unique_ptr<GamePatch>> patches;
 
-    patches.emplace_back(new PatchNewGame(options));
-    patches.emplace_back(new PatchFixMapInconsistencies());
-    patches.emplace_back(new PatchFixWrongMapTransitions());
-    patches.emplace_back(new PatchApplyItemSources());
-    patches.emplace_back(new PatchNeutralizeMapVariantChanges());
-    patches.emplace_back(new PatchNeutralizeFlags());
-    patches.emplace_back(new PatchChangeFlagChecks());
-    patches.emplace_back(new PatchAllowUsingConsumablesWhileFull());
-    patches.emplace_back(new PatchRemoveUselessCephas());
-    patches.emplace_back(new PatchRemoveCutscenes());
-    patches.emplace_back(new PatchSetKingSnowDeathCount(options.king_snow_death_count()));
-    patches.emplace_back(new PatchRemoveItemsFanfare());
-    patches.emplace_back(new PatchFixItemNamesInTextboxes());
-    patches.emplace_back(new PatchApplyHintText());
-    patches.emplace_back(new PatchRemoveNavaInstances());
-    patches.emplace_back(new PatchRemoveVideos(options));
-    patches.emplace_back(new PatchEditCredits());
-    patches.emplace_back(new PatchApplyShopsText());
-    patches.emplace_back(new PatchApplyItemsInfo());
-    patches.emplace_back(new PatchEditGlobalStrings());
-    patches.emplace_back(new PatchAdaptBlueChest());
-    patches.emplace_back(new PatchSetCasinoWinCount(options.casino_win_count_for_last_reward()));
+    patches.emplace_back(std::make_unique<PatchNewGame>(options));
+    patches.emplace_back(std::make_unique<PatchFixMapInconsistencies>());
+    patches.emplace_back(std::make_unique<PatchFixWrongMapTransitions>());
+    patches.emplace_back(std::make_unique<PatchApplyItemSources>());
+    patches.emplace_back(std::make_unique<PatchNeutralizeMapVariantChanges>());
+    patches.emplace_back(std::make_unique<PatchNeutralizeFlags>());
+    patches.emplace_back(std::make_unique<PatchChangeFlagChecks>());
+    patches.emplace_back(std::make_unique<PatchAllowUsingConsumablesWhileFull>());
+    patches.emplace_back(std::make_unique<PatchRemoveUselessCephas>());
+    patches.emplace_back(std::make_unique<PatchRemoveCutscenes>());
+    patches.emplace_back(std::make_unique<PatchSetKingSnowDeathCount>(options.king_snow_death_count()));
+    patches.emplace_back(std::make_unique<PatchRemoveItemsFanfare>());
+    patches.emplace_back(std::make_unique<PatchFixItemNamesInTextboxes>());
+    patches.emplace_back(std::make_unique<PatchApplyHintText>());
+    patches.emplace_back(std::make_unique<PatchRemoveNavaInstances>());
+    patches.emplace_back(std::make_unique<PatchRemoveVideos>(options));
+    patches.emplace_back(std::make_unique<PatchEditCredits>());
+    patches.emplace_back(std::make_unique<PatchApplyShopsText>());
+    patches.emplace_back(std::make_unique<PatchApplyItemsInfo>());
+    patches.emplace_back(std::make_unique<PatchEditGlobalStrings>());
+    patches.emplace_back(std::make_unique<PatchAdaptBlueChest>());
+    patches.emplace_back(std::make_unique<PatchSetCasinoWinCount>(options.casino_win_count_for_last_reward()));
 
     if(options.split_boots_effects())
-        patches.emplace_back(new PatchSplitBootsEffects());
+        patches.emplace_back(std::make_unique<PatchSplitBootsEffects>());
     if(options.progressive_items())
-        patches.emplace_back(new PatchProgressiveItems(!options.split_boots_effects()));
+        patches.emplace_back(std::make_unique<PatchProgressiveItems>(!options.split_boots_effects()));
     if(options.original_game_balance())
-        patches.emplace_back(new PatchOriginalGameBalance());
+        patches.emplace_back(std::make_unique<PatchOriginalGameBalance>());
 
     execute_patches(patches, data, exe, game_data, world);
 }
