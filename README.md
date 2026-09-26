@@ -50,6 +50,20 @@ randomizer pals so they can generate the exact same seed as you by using `gen_pe
 
 Have fun randomizing!
 
+### Splitting randomization and patching
+
+The default command still randomizes and patches in one step. Two flags split that so a placement can be produced on one machine and applied on another (as is done for Archipelago worlds):
+
+- `--placement-out=PATH` randomizes, writes a placement seed map JSON, and stops. It does not need a disc image and does not write the hint log. `PATH` is a `.json` file, or a directory in which the file is named after the hash sentence.
+- `--placement-in=PATH` reads that JSON, generates hints from the placement, patches the disc image, and writes the spoiler/hint log (`--outputlog`).
+
+`placements` in the file maps each location id to the in-game item id placed there. Location ids are the stable ids on item sources. The file also stores the permalink `seed`, `gameSettings`, and `randomizerSettings` that are needed to patch on another computer.
+
+```
+alundra-randomizer --preset=default --placement-out=./seeds/ --nopause
+alundra-randomizer --placement-in=./seeds/placement.json --nopause
+```
+
 ### Building from source
 
 If you want to get the very last version, you can also compile and use the executable version on your own device. You

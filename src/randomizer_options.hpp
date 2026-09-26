@@ -88,6 +88,7 @@ private:
 
 public:
     explicit RandomizerOptions(const ArgumentDictionary& args, const GameData& game_data, const RandomizerWorld& world);
+    explicit RandomizerOptions(const Json& json, const GameData& game_data, const RandomizerWorld& world);
 
     [[nodiscard]] Json to_json(const GameData& game_data, const RandomizerWorld& world) const;
     void apply_json(const Json& json, const GameData& game_data, const RandomizerWorld& world);

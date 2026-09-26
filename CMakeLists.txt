@@ -54,6 +54,8 @@ set(SOURCES
         "src/io/graphviz_writer.cpp"
         "src/io/io.hpp"
         "src/io/model_writer.cpp"
+        "src/io/placement_seed_map.hpp"
+        "src/io/placement_seed_map.cpp"
         "src/io/spoiler_writer.cpp"
 
         # --- Game model ----------------------------------------

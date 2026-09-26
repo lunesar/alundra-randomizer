@@ -70,6 +70,13 @@ RandomizerOptions::RandomizerOptions(const ArgumentDictionary& args, const GameD
     this->validate();
 }
 
+RandomizerOptions::RandomizerOptions(const Json& json, const GameData& game_data, const RandomizerWorld& world)
+{
+    _items_distribution.fill(0);
+    this->apply_json(json, game_data, world);
+    this->validate();
+}
+
 Json RandomizerOptions::to_json(const GameData& game_data, const RandomizerWorld& world) const
 {
     Json json;
@@ -217,9 +224,9 @@ void RandomizerOptions::apply_json(const Json& json, const GameData& game_data, 
     {
         if(key == "permalink")
             continue;
-        if(key == "seed")
+        else if(key == "seed")
             _seed = value;
-        if(key == "randomizerSettings")                        
+        else if(key == "randomizerSettings")
             this->apply_randomizer_settings_json(value, game_data, world);
         else if(key == "gameSettings")
             this->apply_game_settings_json(value);

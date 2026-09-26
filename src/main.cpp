@@ -28,6 +28,7 @@
 #include "model/randomizer_world.hpp"
 #include "world_shuffler.hpp"
 #include "io/io.hpp"
+#include "io/placement_seed_map.hpp"
 
 #include "tools/argument_dictionary.hpp"
 #include "tools/exception.hpp"
@@ -127,8 +128,16 @@ namespace
             << "\n"
             << "Generate a randomized Alundra (USA 1.1) disc image.\n"
             << "\n"
-            << "Usage:\n"
-            << "  alundra-randomizer [options]\n"
+            << "Usage: alundra-randomizer [options]\n"
+            << "\n"
+            << "Modes:\n"
+            << "  (default)              Randomize, patch the disc, and write the spoiler log.\n"
+            << "  --placement-out=PATH   Write a placement JSON and stop. No disc or hint log\n"
+            << "                         (--outputrom and --outputlog are rejected).\n"
+            << "  --placement-in=PATH    Patch the disc and write the spoiler log from that JSON.\n"
+            << "\n"
+            << "A .json or .bin PATH is a file. Any other PATH is a directory, and the file\n"
+            << "is named after the hash sentence.\n"
             << "\n"
             << "Options:\n"
             << "  --help, -h             Show this help and exit.\n"
@@ -137,42 +146,31 @@ namespace
         for(const char* name : KNOWN_INPUT_IMAGE_NAMES)
             std::cout << "                           " << name << "\n";
         std::cout
-            << "  --outputrom=PATH       Output .bin path, or a directory (default: ./).\n"
-            << "                         If PATH is a directory, the file is named after the\n"
-            << "                         seed hash sentence.\n"
-            << "  --outputlog=PATH       Spoiler/generation log .json path, or a directory\n"
-            << "                         (default: alongside the output ROM).\n"
-            << "  --preset=NAME          Preset JSON from ./presets/ (e.g. default).\n"
-            << "                         If omitted, you will be prompted (Enter = default).\n"
-            << "  --permalink[=CODE]     Rebuild a seed from a permalink. If CODE is omitted,\n"
-            << "                         you will be prompted to paste it.\n"
-            << "  --seedcount=N          Generate N seeds (default: 1).\n"
-            << "  --only-logic           Randomize and write the log without dumping or\n"
-            << "                         patching a disc image (no input ROM required).\n"
-            << "  --graph                Write ./logic.dot as a Graphviz logic graph.\n"
-            << "  --debuglog=PATH        Write a debug log JSON (only if spoiler logs are\n"
-            << "                         allowed by the preset).\n"
-            << "  --verbose[=PATH]       Keep dumpsxiso/mkpsxiso output in a log file\n"
-            << "                         (default: ./tool.log). Without --verbose the log\n"
-            << "                         is kept only if patching fails. Success stays off\n"
-            << "                         the console; failures still print the tool output.\n"
+            << "  --outputrom=PATH       Patched .bin (default: ./).\n"
+            << "  --outputlog=PATH       Spoiler log .json (default: next to the output ROM).\n"
+            << "  --preset=NAME          Preset in ./presets/ (prompted; Enter selects default).\n"
+            << "  --permalink[=CODE]     Rebuild a seed. Prompts when CODE is omitted.\n"
+            << "  --seedcount=N          How many seeds to generate (default: 1).\n"
+            << "  --only-logic           Write the log only. No disc image or input ROM.\n"
+            << "  --graph                Write ./logic.dot.\n"
+            << "  --debuglog=PATH        Debug log JSON, when the preset allows spoilers.\n"
+            << "  --verbose[=PATH]       Save dumpsxiso/mkpsxiso output (default: ./tool.log).\n"
 #ifdef DEBUG
             << "  --dumpmodel            Dump the logic model to ./json_data/.\n"
 #endif
-            << "  --pause                Wait for Enter before exiting (this is the default).\n"
-            << "                         Same as --pause=true.\n"
-            << "  --nopause              Exit as soon as generation finishes. Same as\n"
-            << "                         --pause=false.\n"
+            << "  --pause                Wait for Enter before exiting (the default).\n"
+            << "  --nopause              Exit when finished.\n"
             << "\n"
-            << "Game and randomizer settings (item distribution, starting inventory, crests,\n"
-            << "and so on) are not CLI flags. Put them in a preset JSON under ./presets/.\n"
+            << "Item pool, starting inventory, and similar settings go in a preset, not flags.\n"
             << "\n"
             << "Examples:\n"
             << "  alundra-randomizer --preset=default --nopause\n"
             << "  alundra-randomizer --preset=default --verbose --nopause\n"
             << "  alundra-randomizer --input=\"Alundra (USA) (Rev 1).bin\" --outputrom=./seeds/\n"
             << "  alundra-randomizer --permalink --nopause\n"
-            << "  alundra-randomizer --only-logic --preset=default --outputlog=./spoiler.json --nopause\n";
+            << "  alundra-randomizer --only-logic --preset=default --outputlog=./spoiler.json --nopause\n"
+            << "  alundra-randomizer --preset=default --placement-out=./seeds/ --nopause\n"
+            << "  alundra-randomizer --placement-in=./seeds/placement.json --nopause\n";
     }
 
     void validate_input_image(const std::filesystem::path& input_path)
@@ -341,6 +339,112 @@ namespace
             throw RandomizerException(message + " Tool output written to '" + capture_path.string() + "'.");
         }
     }
+
+    enum class RandomizerRunMode
+    {
+        Full,
+        GeneratePlacement,
+        ApplyPlacement
+    };
+
+    RandomizerRunMode resolve_run_mode(const ArgumentDictionary& args)
+    {
+        const bool placement_out = args.contains("placement-out");
+        const bool placement_in = args.contains("placement-in");
+        if(placement_out && placement_in)
+        {
+            throw RandomizerException("--placement-out and --placement-in cannot be used together. "
+                                      "Generate a placement seed map first, then apply it in a second run.");
+        }
+
+        if(placement_out)
+        {
+            if(args.get_string("placement-out").empty())
+                throw RandomizerException("--placement-out requires a path to a .json file or a directory.");
+            if(args.get_boolean("outputrom"))
+            {
+                throw RandomizerException("--outputrom cannot be used with --placement-out. "
+                                          "This mode does not patch a disc image.");
+            }
+            if(args.get_boolean("outputlog"))
+            {
+                throw RandomizerException("--outputlog cannot be used with --placement-out. "
+                                          "The hint log is written by --placement-in.");
+            }
+            return RandomizerRunMode::GeneratePlacement;
+        }
+
+        if(placement_in)
+        {
+            if(args.get_string("placement-in").empty())
+                throw RandomizerException("--placement-in requires a path to a placement seed map .json file.");
+            return RandomizerRunMode::ApplyPlacement;
+        }
+
+        return RandomizerRunMode::Full;
+    }
+
+    void reject_conflicting_placement_options(const ArgumentDictionary& args, const placement_seed_map::Contents& placement)
+    {
+        if(!placement.has_options)
+            return;
+
+        if(!args.get_string("preset").empty())
+        {
+            throw RandomizerException("This placement seed map already contains its settings. "
+                                      "Remove --preset, or remove the permalink/settings from the file "
+                                      "if you want the command line to supply them.");
+        }
+
+        const std::string cli_permalink = args.get_string("permalink");
+        if(cli_permalink.empty())
+            return;
+
+        if(!placement.permalink.empty() && cli_permalink == placement.permalink)
+            return;
+
+        throw RandomizerException("This placement seed map already contains its settings. "
+                                  "Remove --permalink, or pass the same permalink stored in the file.");
+    }
+
+    std::filesystem::path resolve_placement_output_path(const std::filesystem::path& requested, const std::string& hash_sentence)
+    {
+        if(requested.empty())
+            throw RandomizerException("--placement-out requires a path to a .json file or a directory.");
+
+        if(requested.extension() != ".json")
+            return requested / (hash_sentence + ".json");
+
+        return requested;
+    }
+
+    Json initial_spoiler_json(const RandomizerOptions& options, const GameData& game_data, const RandomizerWorld& world)
+    {
+        Json spoiler_json;
+        spoiler_json["permalink"] = options.permalink();
+        spoiler_json["hashSentence"] = options.hash_sentence();
+        spoiler_json.merge_patch(options.to_json(game_data, world));
+        return spoiler_json;
+    }
+
+    void write_output_log(const std::filesystem::path& spoiler_log_path, const Json& spoiler_json, bool allow_spoiler_log)
+    {
+        if(spoiler_log_path.empty())
+            return;
+
+        std::ofstream spoiler_file(spoiler_log_path);
+        if(!spoiler_file)
+            throw RandomizerException("Could not open output log file for writing at path '" + spoiler_log_path.string() + "'");
+
+        spoiler_file << spoiler_json.dump(4);
+        if(!spoiler_file)
+            throw RandomizerException("Could not write output log file at path '" + spoiler_log_path.string() + "'");
+
+        if(allow_spoiler_log)
+            std::cout << "Spoiler log written into " << spoiler_log_path << ".\n";
+        else
+            std::cout << "Generation log written into " << spoiler_log_path << ".\n";
+    }
 }
 
 /**
@@ -432,18 +536,16 @@ void process_paths(std::filesystem::path& output_rom_path, std::filesystem::path
         spoiler_log_path = spoiler_log_path / (hash_sentence + ".json");
 }
 
-Json randomize(RandomizerWorld& world, GameData& game_data, RandomizerOptions& options, PersonalSettings& personal_settings, const ArgumentDictionary& args)
+Json randomize(RandomizerWorld& world, GameData& game_data, RandomizerOptions& options, PersonalSettings& personal_settings, const ArgumentDictionary& args,
+              bool randomize_hint_sources = true)
 {
-    Json spoiler_json;
-
-    spoiler_json["permalink"] = options.permalink();
-    spoiler_json["hashSentence"] = options.hash_sentence();
-    spoiler_json.merge_patch(options.to_json(game_data, world));
+    Json spoiler_json = initial_spoiler_json(options, game_data, world);
 
     std::cout << "\nRandomizing world...\n";
     WorldShuffler shuffler(world, game_data, options);
     shuffler.randomize_items();
-    shuffler.randomize_hints();
+    if(randomize_hint_sources)
+        shuffler.randomize_hints();
 
     if(options.allow_spoiler_log())
     {
@@ -515,8 +617,20 @@ void build_patched_rom(const std::filesystem::path& input_path, const std::files
 
 void generate(const ArgumentDictionary& args)
 {
-    // Fail fast if the disc image or patch tools are missing (--only-logic needs neither).
-    const bool patch_rom = !args.contains("only-logic");
+    const RandomizerRunMode mode = resolve_run_mode(args);
+
+    placement_seed_map::Contents placement;
+    if(mode == RandomizerRunMode::ApplyPlacement)
+    {
+        const std::filesystem::path placement_path = args.get_string("placement-in");
+        std::cout << "Reading placement seed map '" << placement_path.string() << "'...\n";
+        placement = placement_seed_map::read(placement_path);
+        reject_conflicting_placement_options(args, placement);
+    }
+
+    // Fail fast if the disc image or patch tools are missing.
+    // --only-logic and --placement-out need neither.
+    const bool patch_rom = mode != RandomizerRunMode::GeneratePlacement && !args.contains("only-logic");
     std::filesystem::path input_rom_path;
     if(patch_rom)
     {
@@ -527,36 +641,70 @@ void generate(const ArgumentDictionary& args)
 
     GameData game_data;
     RandomizerWorld world(game_data);
-    RandomizerOptions options(args, game_data, world);
+    const bool use_placement_options = mode == RandomizerRunMode::ApplyPlacement && placement.has_options;
+    if(use_placement_options)
+        std::cout << "Using settings from the placement seed map.\n";
+
+    RandomizerOptions options = use_placement_options
+        ? RandomizerOptions(placement.options_json, game_data, world)
+        : RandomizerOptions(args, game_data, world);
     PersonalSettings personal_settings(args);
 
     game_data.apply_options(options);
     world.apply_options(options, game_data);
 
-    Json spoiler_json = randomize(world, game_data, options, personal_settings, args);
+    Json spoiler_json;
+    if(mode == RandomizerRunMode::ApplyPlacement)
+    {
+        std::cout << "\nApplying placement seed map (" << placement.placements.size() << " locations)...\n";
+        placement_seed_map::apply(world, game_data, placement.placements);
+
+        std::cout << "Generating hints...\n";
+        WorldShuffler shuffler(world, game_data, options);
+        shuffler.randomize_hints();
+
+        spoiler_json = initial_spoiler_json(options, game_data, world);
+        if(options.allow_spoiler_log())
+            spoiler_json.merge_patch(SpoilerWriter::build_spoiler_json(world, options));
+    }
+    else
+    {
+        const bool randomize_hint_sources = mode == RandomizerRunMode::Full;
+        spoiler_json = randomize(world, game_data, options, personal_settings, args, randomize_hint_sources);
+    }
 
     // Parse output paths from args
     std::filesystem::path output_rom_path = args.get_string("outputrom", "");
     std::filesystem::path spoiler_log_path = args.get_string("outputlog", "");
     process_paths(output_rom_path, spoiler_log_path, options.hash_sentence());
 
-    if(patch_rom)
-        build_patched_rom(input_rom_path, output_rom_path, game_data, world, options,
-                          resolve_tool_log_path(args));
-    
-    // Write a spoiler log to help the player
-    if(!spoiler_log_path.empty())
+    if(mode == RandomizerRunMode::GeneratePlacement)
     {
-        std::ofstream spoiler_file(spoiler_log_path);
-        if(!spoiler_file)
-            throw RandomizerException("Could not open output log file for writing at path '" + spoiler_log_path.string() + "'");
+        const std::filesystem::path placement_output = resolve_placement_output_path(
+            args.get_string("placement-out"), options.hash_sentence());
+        const std::filesystem::path placement_parent = placement_output.parent_path();
+        if(!placement_parent.empty())
+        {
+            std::error_code directory_error;
+            std::filesystem::create_directories(placement_parent, directory_error);
+            if(directory_error)
+            {
+                throw RandomizerException("Could not create directory '" + placement_parent.string()
+                                          + "' for the placement seed map: " + directory_error.message());
+            }
+        }
 
-        spoiler_file << spoiler_json.dump(4);
-        spoiler_file.close();
-        if(options.allow_spoiler_log())
-            std::cout << "Spoiler log written into " << spoiler_log_path << ".\n";
-        else
-            std::cout << "Generation log written into " << spoiler_log_path << ".\n";
+        placement_seed_map::write(placement_output, options, world);
+        std::cout << "Placement seed map written into " << placement_output.string() << ".\n";
+        std::cout << "No disc image was patched.\n";
+    }
+    else
+    {
+        if(patch_rom)
+            build_patched_rom(input_rom_path, output_rom_path, game_data, world, options,
+                              resolve_tool_log_path(args));
+
+        write_output_log(spoiler_log_path, spoiler_json, options.allow_spoiler_log());
     }
 
     if(args.contains("graph"))
@@ -564,7 +712,16 @@ void generate(const ArgumentDictionary& args)
 
     std::cout << "\nHash sentence: " << options.hash_sentence() << "\n";
     std::cout << "\nPermalink: " << options.permalink() << "\n";
-    std::cout << "\nShare the permalink above with other people to enable them building the exact same seed.\n" << std::endl;
+    if(mode == RandomizerRunMode::GeneratePlacement)
+    {
+        std::cout << "\nApply this placement seed map with --placement-in to patch the game and write the hint log.\n"
+                  << std::endl;
+    }
+    else
+    {
+        std::cout << "\nShare the permalink above with other people to enable them building the exact same seed.\n"
+                  << std::endl;
+    }
 }
 
 int main(int argc, char* argv[])
@@ -591,7 +748,22 @@ int main(int argc, char* argv[])
 
     try
     {
+        const RandomizerRunMode mode = resolve_run_mode(args);
         int seed_count = args.get_integer("seedcount", 1);
+        if(mode == RandomizerRunMode::ApplyPlacement && seed_count > 1)
+        {
+            throw RandomizerException("--seedcount cannot be greater than 1 with --placement-in. "
+                                      "A placement seed map is a single seed.");
+        }
+        if(mode == RandomizerRunMode::GeneratePlacement && seed_count > 1)
+        {
+            const std::filesystem::path placement_path = args.get_string("placement-out");
+            if(placement_path.extension() == ".json")
+            {
+                throw RandomizerException("--placement-out must be a directory when --seedcount is greater than 1.");
+            }
+        }
+
         for(int i=0 ; i<seed_count ; ++i)
             generate(args);
     }
