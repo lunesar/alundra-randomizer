@@ -119,19 +119,39 @@ private:
 
     static void remove_post_nirude_cutscene(BinaryFile& data)
     {
-        // Vanilla warps to cutscene map 451, which forces Overworld E1 to map 17
-        // (collapsed Nirude, no statue-mouth holes). Stay on 439, keep the variant
-        // slot pointing at 439, and use the same xyz as 451's plaza warp.
-        // IfFlagOff 0x01A1 else -> this block (re-enter beaten boss room = warp out).
+        // Vanilla warps to cutscene map 451, which forces Overworld E1 to map 17.
+        // First kill: set 0x01A1 (boss beaten) and warp to the 439 plaza (rewards).
         data.set_bytes(0x47E7B27, { 0x2E, 0x00 });
         data.set_bytes(0x47E7B52, {
-            0x38, 0x11, 0x00, 0xB7, 0x01,              // SetMapVariant 17 -> 439
-            0x53, 0xB7, 0x01, 0x19, 0x28, 0x25, 0x05, 0x4A, // ChangeMap 439 xy=19,28 z=0x25
-            0x00, 0x00, 0xFF
+            0x05, 0xA1, 0x01,                              // FlagOn 0x01A1
+            0x53, 0xB7, 0x01, 0x19, 0x28, 0x25, 0x05, 0x4A, // ChangeMap 439 plaza
+            0x00, 0xFF
         });
 
-        // Map 451: do not force variant 439 back to map 17
+        // Map 421 p6 is the boss door. Vanilla sends it to 451; send it to the
+        // boss room instead (same spawn 451 used) so the first visit still fights.
+        constexpr uint32_t MAP_421_BOSS_DOOR = 0x5B28C90;
+        data.set_word_le(MAP_421_BOSS_DOOR + 4, MAP_324);
+        data.set_byte(MAP_421_BOSS_DOOR + 6, 0x2A); // x=42
+        data.set_byte(MAP_421_BOSS_DOOR + 7, 0x1E); // y=30
+
+        // Map 421 B[3] covers the boss door. If 0x01A1 is on, warp to 439 south
+        // of the statue (tile 30,56), not the plaza. If the flag is off, End
+        // and use the door to 324.
+        data.set_bytes(0x5B4B42C, {
+            0x00,
+            0x3B, 0x2C, 0x2C, 0x1A, 0x1B, 0x00, 0x08,
+            0x04, 0xF8, 0xFF,
+            0x31, 0xA1, 0x01, 0x0E, 0x00,
+            0x53, 0xB7, 0x01, 0x1E, 0x38, 0x25, 0x05, 0x4A,
+            0xFF,
+            0xFF
+        });
+
+        // If 451 is still entered, do not collapse E1: keep variant 439 and
+        // warp to 439 instead of map 17.
         data.set_word_le(0x62297AD, MAP_OVERWORLD_E1_VARIANT);
+        data.set_word_le(0x62297B1, MAP_OVERWORLD_E1_VARIANT);
 
         // Map 17 B[1] only SetMapVariant 17->439 once (if 0x04CA off). After that,
         // neighbors that warp to map 17 (18, 79, 381) load the collapsed layout.
